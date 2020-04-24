@@ -1,0 +1,160 @@
+---
+title: "BUAN6357_Homework2_Noorani"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#import libraries
+if(!require ("fpp2"))install.packages("fpp2")
+library(fpp2)
+theme_set(theme_classic())
+
+#remove.packages(tinytex)
+#tinytex::install_tinytex()
+
+#load visitors dataset
+data(visitors)
+summary(visitors)
+
+#setting seed, just in case
+set.seed(42)
+
+```
+
+Part A: This time plot shows both a trend & seasonality. We see a general positive trend as the years progress. We also see seasonality, as we see regular/periodic troughs and peaks.
+
+```{r Part A}
+#Part A - make time plot & describe main features
+autoplot(visitors) +
+  ggtitle("Short-term overseas visitors in Australia") +
+  xlab("Year") + ylab("Visitors (1000s)")
+```
+
+Part B - Split  data into train & test set comprising the last two years of available data. Forecast the test set using Holt-Winters’ multiplicative method.
+
+```{r Part B}
+
+    #split so that test set includes last 24 data points (last 2 years)
+train <- window(visitors, end = c(2003,4))
+test <- window(visitors, start = c(2003,5))
+
+    #Forecasting for next 24 periods, based on train data set
+hwfc <- hw(train, seasonal="multiplicative", h = 24)
+
+### Check the models
+hwfc[["model"]]
+
+### Plotting forecast as layer on original data, so we can visually see how close our forecast is to actual values
+autoplot(visitors) +
+  autolayer(hwfc, series="HW multiplicative forecasts", PI=FALSE) +
+  xlab("Year") + ylab("Visitors (thousands)") +
+  ggtitle("Short-term overseas visitors in Australia") +
+  guides(colour=guide_legend(title="Forecast"))
+
+```
+
+Part C: is multiplicative seasonality necessary here? Why or why not?
+  
+  Multiplicative seasonality does seem to be necessary because the magnitude of the seasonal variation does seem to be proportional to the year. In other words, the magnitude of the troughs & peaks varies by year.
+  In addition, if we use AIC is our comparison criteria, then the multiplicative seasonality model performs slightly better than the additive. AIC for multiplicative model: 2327, AIC for additive model: 2423
+
+```{r Part C}
+#comparing part B w/ HW's additive model
+hwfc2 <- hw(train, seasonal="additive", h = 24)
+
+### Check the models
+hwfc2[["model"]]
+
+### Plotting forecast as layer on original data, so we can visually see how close our forecast is to actual values
+autoplot(visitors) +
+  autolayer(hwfc2, series="HW additive forecasts", PI=FALSE) +
+  autolayer(hwfc, series="HW multiplicative forecasts", PI=FALSE) +
+  xlab("Year") + ylab("Visitors (thousands)") +
+  ggtitle("Short-term overseas visitors in Australia") +
+  guides(colour=guide_legend(title="Forecast"))
+
+```
+
+Part D - Forecast the two-year test set using each of the following methods:
+    i. ETS
+   ii. additive ETS model applied to a Box-Cox transformed series
+  iii. seasonal naïve method
+
+```{r Part D}
+
+  #i. an ETS model
+ets_fit <- ets(train)
+ets_forecast <- forecast(ets_fit, h=24)
+
+autoplot(visitors) + 
+  autolayer(ets_forecast, PI=FALSE) + 
+  ggtitle("ETS Model\nShort-term overseas visitors in Australia") +
+  xlab("Year") + ylab("Visitors (thousands)")
+
+# ____________________________________________________________________________________________________#
+
+  #ii. an additive ETS model applied to a Box-Cox transformed series
+(lambda <- BoxCox.lambda(train))
+
+ETS_bc_add_forecast <- ets(train, lambda=lambda, additive.only = TRUE) %>% forecast(h=24)
+
+autoplot(visitors) +
+  autolayer(ETS_bc_add_forecast, PI = FALSE) +
+  theme_classic() +
+  ggtitle("Additive Box-Cox transformed\nShort-term overseas visitors in Australia (thousands)") +
+  xlab("Year") + ylab("Visitors (thousands)")
+
+# ____________________________________________________________________________________________________#
+
+  #iii. a seasonal naïve method
+snaive_forecast <- snaive(train, h=24)
+
+autoplot(visitors) +
+  autolayer(snaive_forecast, PI = FALSE) +
+  ggtitle("Seasonal Naive\nShort-term overseas visitors in Australia (thousands)") +
+  xlab("Year") + ylab("Visitors (thousands)")
+
+```
+
+Part E - Which method gives the best forecasts? Does this method pass the residuals test?
+  According to the accuracy function, the ETS(M,Ad,M) model is the best, 
+    since it gives the lowest RMSE.
+  This method does not quite pass the residuals test, since the p-value is less than 0.05, which means we reject the null hypothesis.
+
+
+```{r Part E}
+
+  #first, let's do a visual comparison of all 4 methods
+autoplot(visitors) +
+  autolayer(ets_forecast, PI=FALSE, series="ETS") +
+  autolayer(ETS_bc_add_forecast, PI=FALSE, series="ETS Box-Cox, add") +
+  autolayer(snaive_forecast, PI=FALSE, series="Seasonal Naive") +
+  ggtitle("All Forecasts\nShort-term overseas visitors in Australia (thousands)") +
+  xlab("Year") + ylab("Visitors (thousands)")
+
+  #now let's do a visual comparison, but focusing only on the test data, so that we zoom in
+    #on the last 24 points
+autoplot(test) +
+  autolayer(ets_forecast, PI=FALSE, series="ETS") +
+  autolayer(ETS_bc_add_forecast, PI=FALSE, series="ETS Box-Cox, add") +
+  autolayer(snaive_forecast, PI=FALSE, series="Seasonal Naive") +
+  ggtitle("All Forecasts\nShort-term overseas visitors in Australia (thousands)") +
+  xlab("Year") + ylab("Visitors (thousands)")
+
+  #comparing forecasts using accuracy fxn
+ETS_acc <- accuracy(ets_forecast, visitors)
+ETS_bc_add_fc_acc <-accuracy(ETS_bc_add_forecast, visitors)
+snaive_acc <- accuracy(snaive_forecast, visitors)
+
+  #print results from accuracy fxn. Let's use just the RMSE to compare
+RMSE <- c(ETS_acc['Training set','RMSE'], ETS_bc_add_fc_acc['Training set','RMSE'],snaive_acc['Training set','RMSE'])
+names(RMSE) <- c('ETS','additive_ETS_Box_Cox','Seasonal_Naive')
+print(RMSE)
+
+  #using checkresiduals on ETS, best model
+checkresiduals(ets_forecast)
+
+```
+
